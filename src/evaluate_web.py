@@ -112,6 +112,12 @@ def main():
         rows += evaluate(df, score_rarity(df, col), "rarity", variant)
         s, n = score_ngram(df, col)
         rows += evaluate(df, s, "ngram_lm", variant, f"max_n={n}")
+        # DeepLog-style hybrid: an event never seen in training is an alarm on its own;
+        # the n-gram only judges known events (their order).
+        known = set(df.loc[df.split == "train", col])
+        h = s.copy()
+        h[~df[col].isin(known).values] = 1e6
+        rows += evaluate(df, h, "hybrid_unseen+ngram", variant, f"max_n={n}")
     res = pd.DataFrame(rows)
     res.to_csv(a.out, index=False)
 
