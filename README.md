@@ -31,6 +31,8 @@ Normal traffic uses only 15-18 distinct request types per day (without user agen
    - `rarity`: -log frequency in training
    - `ngram_lm`: variable-order n-gram, order chosen on validation (per source IP)
    - `hybrid_unseen+ngram`: unseen event = alarm, n-gram judges known events
+   - `lstm`: next-event LSTM (DeepLog-style), early stopping on validation
+   - `mix_ngram+lstm`: lambda * P_ngram + (1 - lambda) * P_lstm, lambda chosen on validation
 3. `src/evaluate_web.py` prints detection per attack step and test false-positive rate.
 
 ## Results (1% false positives on validation; numbers in %)
@@ -42,6 +44,8 @@ Normal traffic uses only 15-18 distinct request types per day (without user agen
 | rarity | **without** | **0.2** | 100 | 99.9 | 50 | **0** | 100 |
 | ngram_lm | without | 1.2 | 0 | 0 | 16.7 | 0 | 3.1 |
 | hybrid_unseen+ngram | without | 1.3 | 100 | 99.9 | 50 | 0 | 100 |
+| lstm | without | 1.7 | 100 | 99.9 | 50 | 0 | 100 |
+| mix n-gram+LSTM (lambda 0.2) | without | 1.0 | 100 | 99.9 | 50 | 0 | 100 |
 
 \* window artefact: quiet steps share a 5-minute window with the scans.
 
@@ -53,6 +57,12 @@ Normal traffic uses only 15-18 distinct request types per day (without user agen
 - The plain n-gram fails: after the first new request, a stream of new requests stops
   looking surprising (first dirb request 18.1 bits, the rest 11.1, just under the
   11.4-bit threshold).
+- An interpolated n-gram + LSTM model (mixing weight chosen on normal validation,
+  lambda = 0.2) has fewer false alarms than either part alone (1.0% vs 1.2% and 1.7%),
+  but more than the frequency baseline (0.2%). The test day has about 605 normal lines,
+  so these rates are about 1 vs 6 false alarms.
+- With the user agent, the n-gram, LSTM and mix all miss the scans unless an
+  "unseen event = alarm" rule is added.
 - The webshell upload (3 requests) is indistinguishable from normal users once the
   user agent is hidden. The access log alone cannot detect it.
 
@@ -61,7 +71,7 @@ One host, one attack, one log type; the test day has 605 normal lines, so false-
 rates are rough. Step labels come from the dataset. Synthetic testbed traffic.
 
 ## Next
-LSTM and an interpolated n-gram + LSTM model; then the same host's audit log, to see
+The same host's audit log, to see
 whether a second source catches the upload.
 
 ## Reproduce
