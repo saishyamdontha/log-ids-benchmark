@@ -66,12 +66,50 @@ Normal traffic uses only 15-18 distinct request types per day (without user agen
 - The webshell upload (3 requests) is indistinguishable from normal users once the
   user agent is hidden. The access log alone cannot detect it.
 
+
+## Coverage: which log sees which attack step
+
+One rule for every source: **alarm on any event never seen in that log's training days**
+(21-22 Jan). Web events without the user agent. Test day 24 Jan; alarmed / labelled lines.
+
+| Attack step | web access | audit | auth |
+|---|---|---|---|
+| service scan | 6/12 | | |
+| dirb | 4461/4462 | | |
+| wpscan | 3183/3186 | | |
+| **webshell upload** | **0/3** | | |
+| webshell commands | 32/32 | | |
+| su to another user | | 4/4 | 4/4 |
+| sudo session | | | 3/3 |
+| sudo commands (`cat /etc/shadow`) | | 5/5 | 5/5 |
+
+False alarms of the same rule on normal lines:
+
+| Source | 23 Jan (valid) | 24 Jan (test) |
+|---|---|---|
+| web access | 0 / 831 | 1 / 605 |
+| audit | 0 / 576 | 0 / 556 |
+| auth | 1 / 158 | 1 / 149 |
+
+**Findings**
+- Each log covers a different part of the attack: the web log the break-in, the audit
+  and auth logs the account takeover (`www-data` running `su`, then `sudo cat /etc/shadow`).
+  No single log sees the whole attack.
+- The webshell upload is the one step no log on this host recorded once the user agent
+  is hidden: the audit rules record logins and sessions, not file writes.
+- The attacker used the same IP (172.19.131.174) as a legitimate user on the day before,
+  so blocking by IP would not work.
+- 2 of the 3 test-day "false alarms" are probably unlabelled attack lines: a webshell
+  request from the attacker's IP at 04:37:25, seconds before the `su`, and an sshd
+  "no identification string" line at 03:56:47, one second after the service scan
+  started. The numbers above are reported as labelled, without correction.
+
 ## Limits
-One host, one attack, one log type; the test day has 605 normal lines, so false-positive
+One testbed, one host, one attack run; the test day has 605 normal lines, so false-positive
 rates are rough. Step labels come from the dataset. Synthetic testbed traffic.
 
 ## Next
-The same host's audit log, to see
-whether a second source catches the upload.
+A second AIT testbed (for example `santos` or `wardbeck`), to check whether these
+findings hold on another network and attack run.
 
 ## Reproduce
