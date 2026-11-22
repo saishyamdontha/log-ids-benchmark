@@ -74,6 +74,37 @@ def score_ngram(df, col, verbose=False):
     return scores, best
 
 
+def ngram_probs(df, col):
+    """Per-event n-gram probabilities (order chosen on validation)."""
+    seqs = {sp: [g[col].tolist() for _, g in df[df.split == sp].groupby("ip", sort=False)]
+            for sp in ("train", "valid")}
+    best, _ = choose_order(seqs["train"], seqs["valid"], verbose=False)
+    lm = NgramLM(max_n=best).fit(seqs["train"])
+    p = np.zeros(len(df))
+    for _, g in df.groupby("ip", sort=False):
+        seq = g[col].tolist()
+        p[g.index.values] = [lm.prob(t, seq[max(0, i - best + 1):i]) for i, t in enumerate(seq)]
+    return p, best
+
+
+def lstm_probs(df, col, verbose=False):
+    from lstm_lm import LSTMLM
+    seqs = {sp: [g[col].tolist() for _, g in df[df.split == sp].groupby("ip", sort=False)]
+            for sp in ("train", "valid")}
+    lm = LSTMLM().fit(seqs["train"], seqs["valid"], verbose=verbose)
+    p = np.zeros(len(df))
+    for _, g in df.groupby("ip", sort=False):
+        p[g.index.values] = lm.probs(g[col].tolist())
+    return p
+
+
+def choose_lambda(df, p_ng, p_ls, grid=np.linspace(0, 1, 11)):
+    """Pick the mixing weight with the lowest surprisal on NORMAL validation events."""
+    v = ((df.split == "valid") & ~df.attack).values
+    bits = {float(l): float(np.mean(-np.log2(l * p_ng[v] + (1 - l) * p_ls[v] + 1e-300))) for l in grid}
+    return min(bits, key=bits.get), bits
+
+
 def threshold(valid_normal_scores, fpr):
     return float(np.quantile(valid_normal_scores, 1 - fpr))
 
@@ -100,6 +131,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--parsed", nargs="+", required=True)
     ap.add_argument("--out", default="results/web_eval.csv")
+    ap.add_argument("--lstm", action="store_true", help="also run the LSTM, the n-gram+LSTM mix and its hybrid")
     a = ap.parse_args()
     paths = sorted(p for pat in a.parsed for p in glob.glob(pat))
     df = load(paths)
@@ -118,6 +150,17 @@ def main():
         h = s.copy()
         h[~df[col].isin(known).values] = 1e6
         rows += evaluate(df, h, "hybrid_unseen+ngram", variant, f"max_n={n}")
+        if a.lstm:
+            pn, n_ord = ngram_probs(df, col)
+            pl = lstm_probs(df, col, verbose=False)
+            lam, _ = choose_lambda(df, pn, pl)
+            mix = -np.log2(lam * pn + (1 - lam) * pl + 1e-300)
+            rows += evaluate(df, -np.log2(pl + 1e-300), "lstm", variant)
+            rows += evaluate(df, mix, "mix_ngram+lstm", variant, f"lambda={lam:.1f}, max_n={n_ord}")
+            known = set(df.loc[df.split == "train", col])
+            mh = mix.copy(); mh[~df[col].isin(known).values] = 1e6
+            rows += evaluate(df, mh, "hybrid_unseen+mix", variant, f"lambda={lam:.1f}")
+            print(f"[{variant}] mix weight chosen on normal validation: lambda={lam:.1f} (1 = n-gram only, 0 = LSTM only)")
     res = pd.DataFrame(rows)
     res.to_csv(a.out, index=False)
 
