@@ -54,7 +54,16 @@ def score_rarity(df, col):
     return np.array([-math.log((counts.get(e, 0) + 1) / (n + v)) for e in df[col]])
 
 
+def unk_map(df, col, min_count=2):
+    """Events seen fewer than min_count times in TRAINING become <UNK>."""
+    counts = Counter(df.loc[df.split == "train", col])
+    keep = {e for e, c in counts.items() if c >= min_count}
+    return df[col].where(df[col].isin(keep), "<UNK>")
+
+
 def score_ngram(df, col, verbose=False):
+    df = df.assign(_tok=unk_map(df, col))
+    col = "_tok"
     seqs = {sp: [g[col].tolist() for _, g in df[df.split == sp].groupby("ip", sort=False)]
             for sp in ("train", "valid")}
     best, table = choose_order(seqs["train"], seqs["valid"], verbose=verbose)
