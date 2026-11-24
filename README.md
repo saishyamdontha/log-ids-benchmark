@@ -126,6 +126,8 @@ Full table (with user agent, 5%): `results/window_baselines.csv`.
   records in total), so the webshell commands, run as www-data, leave no host trace; the host
   logs first see the attacker at the `su` to jhall, 40 minutes after the upload. The upload
   exploits wpDiscuz (CVE-2020-24186) without logging in.
+  Two unlabelled sources were checked as well: the Apache error log at 03:58 holds only
+  scanner probes, and Suricata sees only flow and TLS events (the site uses HTTPS), with no alert.
 - **Label gaps.** Some auth.log lines written by the attacker's `su` carry no attack label, so
   part of the auth "false alarms" may be unlabelled attack lines.
 

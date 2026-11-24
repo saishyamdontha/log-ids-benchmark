@@ -19,9 +19,13 @@ STEPS = ["dirb", "wpscan", "service_scan", "webshell_upload", "webshell_cmd", "e
 UNSEEN = "__UNSEEN__"
 
 
+import os
+TRAIN_END = pd.Timestamp(os.environ.get("TRAIN_END", "2022-01-23"), tz="UTC")
+TEST_START = pd.Timestamp(os.environ.get("TEST_START", "2022-01-24"), tz="UTC")
+
+
 def split_of(ts):
-    d = ts.dt.strftime("%Y-%m-%d")
-    return np.where(d < "2022-01-23", "train", np.where(d == "2022-01-23", "valid", "test"))
+    return np.where(ts < TRAIN_END, "train", np.where(ts < TEST_START, "valid", "test"))
 
 
 def window_matrix(df, col, vocab, unseen_col):

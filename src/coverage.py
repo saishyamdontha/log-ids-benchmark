@@ -16,8 +16,9 @@ import argparse, glob
 import numpy as np
 import pandas as pd
 
-TRAIN_END = pd.Timestamp("2022-01-23", tz="UTC")
-TEST_START = pd.Timestamp("2022-01-24", tz="UTC")
+import os
+TRAIN_END = pd.Timestamp(os.environ.get("TRAIN_END", "2022-01-23"), tz="UTC")
+TEST_START = pd.Timestamp(os.environ.get("TEST_START", "2022-01-24"), tz="UTC")
 STEPS = ["service_scan", "dirb", "wpscan", "webshell_upload", "webshell_cmd",
          "attacker_change_user", "escalated_sudo_session", "escalated_sudo_command", "escalated_command"]
 

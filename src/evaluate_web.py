@@ -28,8 +28,9 @@ import pandas as pd
 sys.path.insert(0, "src")
 from ngram_lm import NgramLM, choose_order
 
-TRAIN_END = pd.Timestamp("2022-01-23", tz="UTC")
-TEST_START = pd.Timestamp("2022-01-24", tz="UTC")
+import os
+TRAIN_END = pd.Timestamp(os.environ.get("TRAIN_END", "2022-01-23"), tz="UTC")
+TEST_START = pd.Timestamp(os.environ.get("TEST_START", "2022-01-24"), tz="UTC")
 STEPS = ["dirb", "wpscan", "service_scan", "webshell_upload", "webshell_cmd", "escalate"]
 FPRS = [0.01, 0.05]
 
