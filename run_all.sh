@@ -30,6 +30,9 @@ done
 echo "[4/5] evaluate web detectors"
 python src/evaluate_web.py --parsed results/web_access_{1,2,3,4}.parquet --lstm
 
+echo "[4b] window baselines (PCA, Isolation Forest)"
+python src/baselines_window.py --parsed results/web_access_{1,2,3,4}.parquet
+
 echo "[5/5] coverage matrix (unseen-event rule, all sources)"
 python src/coverage.py --web results/web_access_{1,2,3,4}.parquet \
                        --host results/host_audit.parquet results/host_auth_*.parquet
