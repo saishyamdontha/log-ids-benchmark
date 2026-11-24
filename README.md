@@ -86,7 +86,31 @@ One rule, no threshold: **an event never seen in training is an alarm.**
 
 False alarms of the same rule on the test day: web 0.17%, audit 0.00%, auth 0.67%.
 
+## Results: standard window baselines (web, no user agent)
+Per-IP 1-minute windows as log1p count vectors over training events (`src/baselines_window.py`),
+fit on training windows only, same thresholds and test day as above. "Unseen feature" adds one
+column counting events never seen in training; classic loglizer-style setups drop such events.
+
+| Method | unseen feature | FP target | test FPR | dirb | wpscan | service scan | webshell upload | webshell cmd | escalate |
+|---|---|---|---|---|---|---|---|---|---|
+| PCA residual | yes | 1% | 1.0 | 100 | 100 | 83.3 | 100* | 100 | 100 |
+| PCA residual | no | 1% | 1.0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| PCA residual | no | 5% | 5.1 | 0 | 93.3 | 0 | 100* | 56.2 | 0 |
+| Isolation Forest | yes | 1% | 0.0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Isolation Forest | no | 1% | 0.0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+\* Window artefact: the three upload requests share the attacker's 03:58 window with 2,971 wpscan
+and 18 webshell-command events, so PCA's alarm on that window is not a detection of the upload.
+Full table (with user agent, 5%): `results/window_baselines.csv`.
+
 ## Error analysis
+- **Classic baselines depend on novelty too.** Without the unseen column, PCA and Isolation
+  Forest detect nothing at 1% FP: attack windows consist almost entirely of unseen events, so
+  once those are dropped the windows look nearly empty and normal. With the column, PCA catches
+  every detectable step, the same lesson as the hybrid and the coverage rule.
+- **Isolation Forest cannot use the novelty column.** It is always 0 in training, and trees
+  cannot split on a feature that never varies. At 1% FP its validation scores likely tie among
+  identical windows, so the threshold raises no alarms.
 - **Why `ngram_lm` fails at 1%.** All attack events are unseen in training, so their context is
   unseen too, and `prob()` backs off to the empty context: P ~ 1/(N+V), surprise ~ 11.1 bits.
   The 1% thresholds are 11.4 (no UA) and 14.5 (with UA) bits; the 5% thresholds are 5.3. That
@@ -116,5 +140,5 @@ python -m pytest -q
 
 ## Layout
 `src/parse_web.py`, `src/parse_host.py` parsers · `src/ngram_lm.py`, `src/lstm_lm.py` models ·
-`src/evaluate_web.py` web evaluation · `src/coverage.py` unseen-event rule across sources ·
+`src/evaluate_web.py` web evaluation · `src/baselines_window.py` PCA / Isolation Forest · `src/coverage.py` unseen-event rule across sources ·
 `src/parse_logs.py` first Drain3 attempt (dropped: it merged method, path and status).
