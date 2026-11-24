@@ -1,0 +1,10 @@
+,web_access,audit,auth
+service_scan,6/12,,
+dirb,4461/4462,,
+wpscan,3183/3186,,
+webshell_upload,0/3,,
+webshell_cmd,32/32,,
+attacker_change_user,,4/4,4/4
+escalated_sudo_session,,,3/3
+escalated_sudo_command,,5/5,5/5
+escalated_command,,5/5,5/5
