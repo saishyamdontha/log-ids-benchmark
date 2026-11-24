@@ -120,6 +120,12 @@ Full table (with user agent, 5%): `results/window_baselines.csv`.
   3-event sequence occurs 19 times. The attacker never logged in, but neither does normal
   admin-ajax traffic in this log (no login POSTs at all), so a "POST without login" rule would
   flag every normal request. Only the `python-requests` user agent separates it.
+- **No log source used here can catch the upload, and combining sources does not help.** The
+  dataset labels the upload (3 lines) and the webshell commands (32 lines) only in the Apache
+  access log. The audit log records PAM and session events but no process execution (4 SYSCALL
+  records in total), so the webshell commands, run as www-data, leave no host trace; the host
+  logs first see the attacker at the `su` to jhall, 40 minutes after the upload. The upload
+  exploits wpDiscuz (CVE-2020-24186) without logging in.
 - **Label gaps.** Some auth.log lines written by the attacker's `su` carry no attack label, so
   part of the auth "false alarms" may be unlabelled attack lines.
 
