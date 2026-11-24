@@ -1,115 +1,120 @@
 # log-ids-benchmark
 
-Which attack steps can a detector find in server logs, at false-alarm rates a
-security team could live with? Methods learn **normal** behaviour only and are
-scored per attack step, with and without the attacker's user agent.
+**Question:** which attack steps can a detector find in server logs at false-alarm rates a
+security team could live with (1% and 5%), when it learns from **normal** behaviour only?
 
 Follows [syscall-ids-benchmark](https://github.com/saishyamdontha/syscall-ids-benchmark),
-where a 3-gram beat an LSTM at 1% false positives on Linux system calls.
+where a 3-gram beat an LSTM at 1% false positives on Linux system calls. This project asks
+whether that holds on logs.
+
+## Headline
+1. **Simple wins again.** A frequency score (`rarity`) catches every detectable web step at
+   0.17% test false positives, as well as an n-gram, an LSTM or their mix, and with fewer false alarms.
+2. **Language models cannot flag novel events at 1% FP.** With Witten-Bell backoff, a
+   never-seen event in a never-seen context gets at most ~log2(N+V) = 11.1 bits of surprise,
+   less than a *known* event that breaks a confident context. An explicit
+   "unseen event = alarm" rule (DeepLog-style) fixes this.
+3. **Web logs see reconnaissance, host logs see privilege escalation, and no log used here
+   sees the webshell upload** once the attacker's user agent is removed.
 
 ## Data
-AIT Log Data Set v2.0, testbed **russellmitchell** (Zenodo record 5789064, not included:
-download `russellmitchell.zip`, 7.1 GB). Host: `intranet_server` (WordPress),
-Apache access logs `intranet.smith.russellmitchell.com-access.log.{4,3,2,1}`.
-Labels come from the dataset (`labels/...`), one entry per attack line.
+AIT Log Data Set v2.0, testbed **russellmitchell** (Zenodo record 5789064, not included).
+Host `intranet_server` (WordPress): Apache access logs, Linux audit log, auth.log.
 
-| Split | Time (UTC) | Lines | Attack lines |
+| Split | Time (UTC) | Web lines | Attack lines |
 |---|---|---|---|
 | train | 21-22 Jan 2022 | 2,053 | 0 |
-| valid | 23 Jan (thresholds, model order) | 831 | 0 |
-| test  | 24 Jan (attack 03:01-04:39, then a normal day) | 8,300 | 7,695 |
+| valid | 23 Jan (thresholds, model order, lambda) | 831 | 0 |
+| test  | 24 Jan (attack 03:01-04:39, then normal) | 8,300 | 7,695 |
 
-Normal traffic uses only 15-18 distinct request types per day (without user agent).
+Normal web traffic uses only 18 distinct events (30 with user agent) over the two training days.
 
-## Method
-1. `src/parse_web.py`: each request becomes `METHOD STATUS PATH_SHAPE[?params]`,
-   optionally `| user-agent family`. Drain3 was tried first (`src/parse_logs.py`) but
-   collapsed method, path and status, leaving mostly the user agent.
-2. Detectors score every request; thresholds are set at 1% / 5% false positives on
-   normal validation; nothing is tuned on the test day.
-   - `volume_5min`: requests per 5-minute window
-   - `rarity`: -log frequency in training
-   - `ngram_lm`: variable-order n-gram, order chosen on validation (per source IP)
-   - `hybrid_unseen+ngram`: unseen event = alarm, n-gram judges known events
-   - `lstm`: next-event LSTM (DeepLog-style), early stopping on validation
-   - `mix_ngram+lstm`: lambda * P_ngram + (1 - lambda) * P_lstm, lambda chosen on validation
-3. `src/evaluate_web.py` prints detection per attack step and test false-positive rate.
+## Protocol
+- Each request becomes an event `METHOD STATUS PATH_SHAPE`, optionally `| user-agent family`
+  (`src/parse_web.py`). Host lines become events in `src/parse_host.py`.
+- Detectors are trained on train, thresholds are set at 1% / 5% false positives on **normal
+  validation**, and the test day is scored once. Nothing is tuned on test.
+- Detection is reported **per attack step**, plus the realised test false-positive rate.
+- `with_ua` / `no_ua`: the user agent is attacker-controlled and trivial to fake, so
+  **`no_ua` is the honest setting**; `with_ua` shows how much a careless attacker gives away.
 
-## Results (1% false positives on validation; numbers in %)
+Detectors: `volume_5min` (requests per 5 min), `rarity` (-log training frequency),
+`ngram_lm` (variable-order Witten-Bell n-gram per source IP, order chosen on validation),
+`lstm` (next-event LSTM), `mix` (lambda*n-gram + (1-lambda)*LSTM, lambda chosen on validation),
+and `hybrid_unseen+*` (unseen event = alarm, model judges known events).
 
-| Method | user agent | test FPR | dirb | wpscan | service_scan | webshell upload | webshell cmd |
+## Results: web logs, 1% FP target (numbers in %)
+
+**Without user agent (honest)**
+
+| Method | test FPR | dirb | wpscan | service scan | webshell upload | webshell cmd | escalate |
 |---|---|---|---|---|---|---|---|
-| volume_5min* | - | 0.5 | 100 | 100 | 100 | 100* | 100 |
-| rarity | with | 1.8 | 100 | 100 | 100 | 100 | 100 |
-| rarity | **without** | **0.2** | 100 | 99.9 | 50 | **0** | 100 |
-| ngram_lm | without | 1.2 | 0 | 0 | 16.7 | 0 | 3.1 |
-| hybrid_unseen+ngram | without | 1.3 | 100 | 99.9 | 50 | 0 | 100 |
-| lstm | without | 1.7 | 100 | 99.9 | 50 | 0 | 100 |
-| mix n-gram+LSTM (lambda 0.2) | without | 1.0 | 100 | 99.9 | 50 | 0 | 100 |
+| rarity | **0.17** | 100.0 | 99.9 | 50.0 | **0** | 100 | 100 |
+| ngram_lm | 1.16 | 0.04 | 0.03 | 16.7 | 0 | 3.1 | 0 |
+| hybrid_unseen+ngram | 1.32 | 100.0 | 99.9 | 50.0 | 0 | 100 | 100 |
+| lstm | 1.65 | 100.0 | 99.9 | 50.0 | 0 | 100 | 100 |
+| mix (lambda=0.2) | 0.99 | 100.0 | 99.9 | 50.0 | 0 | 100 | 100 |
 
-\* window artefact: quiet steps share a 5-minute window with the scans.
+**With user agent**
 
-**Findings**
-- A frequency baseline detects every scan and webshell command at 0.2% false alarms,
-  even without the user agent.
-- Adding sequence order (n-gram) adds false alarms and catches nothing more. Browsers
-  load page assets in parallel, so request order is partly random in normal traffic.
-- The plain n-gram fails: after the first new request, a stream of new requests stops
-  looking surprising (first dirb request 18.1 bits, the rest 11.1, just under the
-  11.4-bit threshold).
-- An interpolated n-gram + LSTM model (mixing weight chosen on normal validation,
-  lambda = 0.2) has fewer false alarms than either part alone (1.0% vs 1.2% and 1.7%),
-  but more than the frequency baseline (0.2%). The test day has about 605 normal lines,
-  so these rates are about 1 vs 6 false alarms.
-- With the user agent, the n-gram, LSTM and mix all miss the scans unless an
-  "unseen event = alarm" rule is added.
-- The webshell upload (3 requests) is indistinguishable from normal users once the
-  user agent is hidden. The access log alone cannot detect it.
+| Method | test FPR | dirb | wpscan | service scan | webshell upload | webshell cmd | escalate |
+|---|---|---|---|---|---|---|---|
+| rarity | 1.82 | 100 | 100 | 100 | 100 | 100 | 100 |
+| ngram_lm | 0.50 | 0 | 0 | 8.3 | 0 | 0 | 0 |
+| hybrid_unseen+ngram | 0.66 | 100 | 100 | 100 | 100 | 100 | 100 |
+| lstm | 1.49 | 0 | 0 | 41.7 | 0 | 0 | 0 |
+| mix (lambda=0.4) | 0.83 | 0 | 0 | 50.0 | 0 | 0 | 0 |
 
+At 5% FP every learned detector reaches ~100% on the detectable steps. Full table: `results/web_eval.csv`.
+`volume_5min` scores 100% everywhere only because quiet steps share a 5-minute window with the
+scans (window artefact); it is not a real detection.
 
-## Coverage: which log sees which attack step
-
-One rule for every source: **alarm on any event never seen in that log's training days**
-(21-22 Jan). Web events without the user agent. Test day 24 Jan; alarmed / labelled lines.
+## Results: coverage across log sources
+One rule, no threshold: **an event never seen in training is an alarm.**
 
 | Attack step | web access | audit | auth |
 |---|---|---|---|
-| service scan | 6/12 | | |
+| service_scan | 6/12 | | |
 | dirb | 4461/4462 | | |
 | wpscan | 3183/3186 | | |
-| **webshell upload** | **0/3** | | |
-| webshell commands | 32/32 | | |
-| su to another user | | 4/4 | 4/4 |
-| sudo session | | | 3/3 |
-| sudo commands (`cat /etc/shadow`) | | 5/5 | 5/5 |
+| webshell_upload | **0/3** | | |
+| webshell_cmd | 32/32 | | |
+| attacker_change_user | | 4/4 | 4/4 |
+| escalated_sudo_session | | | 3/3 |
+| escalated_sudo_command | | 5/5 | 5/5 |
+| escalated_command | | 5/5 | 5/5 |
 
-False alarms of the same rule on normal lines:
+False alarms of the same rule on the test day: web 0.17%, audit 0.00%, auth 0.67%.
 
-| Source | 23 Jan (valid) | 24 Jan (test) |
-|---|---|---|
-| web access | 0 / 831 | 1 / 605 |
-| audit | 0 / 576 | 0 / 556 |
-| auth | 1 / 158 | 1 / 149 |
-
-**Findings**
-- Each log covers a different part of the attack: the web log the break-in, the audit
-  and auth logs the account takeover (`www-data` running `su`, then `sudo cat /etc/shadow`).
-  No single log sees the whole attack.
-- The webshell upload is the one step no log on this host recorded once the user agent
-  is hidden: the audit rules record logins and sessions, not file writes.
-- The attacker used the same IP (172.19.131.174) as a legitimate user on the day before,
-  so blocking by IP would not work.
-- 2 of the 3 test-day "false alarms" are probably unlabelled attack lines: a webshell
-  request from the attacker's IP at 04:37:25, seconds before the `su`, and an sshd
-  "no identification string" line at 03:56:47, one second after the service scan
-  started. The numbers above are reported as labelled, without correction.
+## Error analysis
+- **Why `ngram_lm` fails at 1%.** All attack events are unseen in training, so their context is
+  unseen too, and `prob()` backs off to the empty context: P ~ 1/(N+V), surprise ~ 11.1 bits.
+  The 1% thresholds are 11.4 (no UA) and 14.5 (with UA) bits; the 5% thresholds are 5.3. That
+  explains the jump from 0% to 100% detection between 1% and 5% FP.
+- **Why the upload is invisible.** Its three requests (`GET /`, `GET /?p`,
+  `POST /wp-admin/admin-ajax.php`) occur 318, 154 and 475 times in normal traffic, and the exact
+  3-event sequence occurs 19 times. The attacker never logged in, but neither does normal
+  admin-ajax traffic in this log (no login POSTs at all), so a "POST without login" rule would
+  flag every normal request. Only the `python-requests` user agent separates it.
+- **Label gaps.** Some auth.log lines written by the attacker's `su` carry no attack label, so
+  part of the auth "false alarms" may be unlabelled attack lines.
 
 ## Limits
-One testbed, one host, one attack run; the test day has 605 normal lines, so false-positive
-rates are rough. Step labels come from the dataset. Synthetic testbed traffic.
-
-## Next
-A second AIT testbed (for example `santos` or `wardbeck`), to check whether these
-findings hold on another network and attack run.
+- One testbed, one host, synthetic traffic; results may not transfer to other AIT testbeds.
+- Small normal test sets (605 web lines): one false alarm = 0.17% FPR.
+- Thresholds come from a single normal validation day.
+- The LSTM's failure at 1% FP **with** user agent is not explained yet.
+- DNS logs (where the dataset's DNSteal contaminates training) are not used.
 
 ## Reproduce
+```bash
+python -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+# put russellmitchell.zip (Zenodo 5789064) in data/
+./run_all.sh            # rebuilds results/web_eval.csv and results/coverage.csv
+python -m pytest -q
+```
+
+## Layout
+`src/parse_web.py`, `src/parse_host.py` parsers · `src/ngram_lm.py`, `src/lstm_lm.py` models ·
+`src/evaluate_web.py` web evaluation · `src/coverage.py` unseen-event rule across sources ·
+`src/parse_logs.py` first Drain3 attempt (dropped: it merged method, path and status).
